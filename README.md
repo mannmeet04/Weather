@@ -1,4 +1,4 @@
-# 🌦 Weather Data Pipeline
+# Weather Data Pipeline
 
 Ein vollautomatisiertes ETL-System, das stündliche Wetterdaten für fünf deutsche Städte abruft, bereinigt und in PostgreSQL speichert – alles in Docker verpackt.
 
