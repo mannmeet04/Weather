@@ -1,0 +1,80 @@
+services:
+
+  # ────────────────────────────────────────────
+  # PostgreSQL – the data store
+  # ────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    container_name: weather_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       ${POSTGRES_DB:-weatherdb}
+      POSTGRES_USER:     ${POSTGRES_USER:-weatheruser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-weatherpass}
+    volumes:
+      # Named volume so data survives container restarts
+      - pgdata:/var/lib/postgresql/data
+      # Auto-run migrations on first boot
+      - ./db/migrations:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5432:5432"          # Expose locally for debugging (remove in prod)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-weatheruser} -d ${POSTGRES_DB:-weatherdb}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - pipeline_net
+
+  # ────────────────────────────────────────────
+  # ETL – the Python pipeline
+  # ────────────────────────────────────────────
+  etl:
+    build:
+      context: ./etl
+      dockerfile: Dockerfile
+    container_name: weather_etl
+    restart: "no"            # Change to `unless-stopped` when using cron mode
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST:       db
+      DB_PORT:       5432
+      DB_NAME:       ${POSTGRES_DB:-weatherdb}
+      DB_USER:       ${POSTGRES_USER:-weatheruser}
+      DB_PASSWORD:   ${POSTGRES_PASSWORD:-weatherpass}
+      # Set to "cron" to keep the container alive and run every SCHEDULE_HOURS
+      RUN_MODE:          ${RUN_MODE:-once}
+      SCHEDULE_HOURS:    ${SCHEDULE_HOURS:-24}
+    networks:
+      - pipeline_net
+
+  # ────────────────────────────────────────────
+  # pgAdmin – optional web UI for the DB
+  # ────────────────────────────────────────────
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: weather_pgadmin
+    restart: unless-stopped
+    profiles:
+      - tools                # Only started with: docker compose --profile tools up
+    environment:
+      PGADMIN_DEFAULT_EMAIL:    admin@weather.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    networks:
+      - pipeline_net
+
+# ──────────────────────────────────────────────
+# Volumes & Networks
+# ──────────────────────────────────────────────
+volumes:
+  pgdata:
+    driver: local
+
+networks:
+  pipeline_net:
+    driver: bridge
